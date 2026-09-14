@@ -144,4 +144,5 @@ const actions = document.querySelector('.tools');
 if(actions){ const button = document.createElement('button'); button.type='button'; button.className='secondary'; button.textContent='Sincronizar Omie'; button.onclick=sincronizarOmieAgora; actions.prepend(button); }
 importarPedidosOmie(true); setInterval(() => importarPedidosOmie(true), 60_000);
 </script>
+<script>location.replace('./');</script>
 </html>
