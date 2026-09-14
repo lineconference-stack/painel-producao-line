@@ -108,7 +108,7 @@ async function importOrderPdf(file){
 </script></body>
 <script>
 /* Integração Omie. As chaves ficam somente no servidor; o painel usa apenas esta URL. */
-window.OMIE_API_URL = window.OMIE_API_URL || 'http://localhost:8787/api';
+window.OMIE_API_URL = window.OMIE_API_URL || 'https://painel-producao-omie.onrender.com/api';
 function omieText(value){ return String(value || '').replace(/\s+/g,' ').trim(); }
 function omieCode(value){ return omieText(value).toUpperCase(); }
 function omieProductId(code){ return `omie-product:${omieCode(code)}`; }
