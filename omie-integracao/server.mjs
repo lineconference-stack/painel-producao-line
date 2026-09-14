@@ -73,6 +73,23 @@ function text(value) { return String(value ?? '').replace(/\s+/g, ' ').trim(); }
 function statusFromStage(stage) {
   return ({ '10': 'A separar', '20': 'Montando', '30': 'Separando', '40': 'Separado', '50': 'Faturado' })[String(stage)] || 'A separar';
 }
+function shippingFromOrder(order) {
+  const extra = order.informacoes_adicionais || {};
+  const freight = order.frete || {};
+  return {
+    recipient: text(extra.cNomeOd || order.cliente?.razao_social || order.cabecalho?.nome_cliente || ''),
+    document: text(extra.cCnpjCpfOd || ''),
+    address: text([extra.cEnderecoOd, extra.cNumeroOd, extra.cComplementoOd].filter(Boolean).join(', ')),
+    district: text(extra.cBairroOd || ''),
+    city: text(extra.cCidadeOd || ''),
+    state: text(extra.cEstadoOd || ''),
+    zip: text(extra.cCEPOd || ''),
+    phone: text(extra.cTelefoneOd || ''),
+    volumes: Number(freight.quantidade_volumes || 1),
+    species: text(freight.especie_volumes || 'Volume'),
+    tracking: text(freight.codigo_rastreio || '')
+  };
+}
 function normaliseOrder(company, order) {
   const header = order.cabecalho || {};
   const details = Array.isArray(order.det) ? order.det : [];
@@ -84,6 +101,7 @@ function normaliseOrder(company, order) {
     omieId: String(header.codigo_pedido || ''),
     code: `${company.name === 'GLO Equipamentos' ? 'GLO' : 'LINE'}-${orderNumber}`,
     client: text(order.cliente?.razao_social || order.cabecalho?.nome_cliente || ''),
+    shipping: shippingFromOrder(order),
     invoice: text(order.lista_nfe?.nfe?.[0]?.numero_nfe || ''),
     date: dateISO(header.data_previsao),
     status: statusFromStage(header.etapa),
@@ -180,6 +198,15 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, configuredCompanies: companies.filter(c => c.key && c.secret).map(c => c.name) });
     if (req.method === 'GET' && url.pathname === '/api/orders') { const db = await readDb(); return json(res, 200, db); }
+    if (req.method === 'GET' && url.pathname === '/api/order-details') {
+      const companyName = text(url.searchParams.get('company'));
+      const omieId = text(url.searchParams.get('omieId'));
+      const company = companies.find((item) => item.name === companyName);
+      if (!company || !omieId) return json(res, 400, { error: 'Empresa ou pedido inválido' });
+      const complete = await omieCall(company, 'ConsultarPedido', { codigo_pedido: omieId });
+      const order = normaliseOrder(company, complete.pedido_venda_produto || complete);
+      return json(res, 200, { client: order.client, shipping: order.shipping, invoice: order.invoice });
+    }
     if (req.method === 'GET' && url.pathname === '/api/product-image') {
       const companyName = text(url.searchParams.get('company'));
       const code = text(url.searchParams.get('code'));
