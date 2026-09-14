@@ -15,6 +15,7 @@ const omieProductUrl = 'https://app.omie.com.br/api/v1/geral/produtos/';
 const omieClientUrl = 'https://app.omie.com.br/api/v1/geral/clientes/';
 const productImageCache = new Map();
 const customerCache = new Map();
+let activeSync = null;
 const companies = [
   { name: 'Line Conference', key: process.env.OMIE_LINE_APP_KEY, secret: process.env.OMIE_LINE_APP_SECRET },
   { name: 'GLO Equipamentos', key: process.env.OMIE_GLO_APP_KEY, secret: process.env.OMIE_GLO_APP_SECRET }
@@ -53,13 +54,18 @@ async function saveDb(db) {
   await writeFile(temp, JSON.stringify(db, null, 2));
   await rename(temp, dbPath);
 }
-async function omieCall(company, call, param, serviceUrl = omieUrl) {
+async function omieCall(company, call, param, serviceUrl = omieUrl, attempt = 0) {
   const response = await fetch(serviceUrl, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ call, app_key: company.key, app_secret: company.secret, param: [param] })
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.faultstring || body.faultcode) throw new Error(body.faultstring || `Omie respondeu ${response.status}`);
+  const errorMessage = body.faultstring || (!response.ok ? `Omie respondeu ${response.status}` : '');
+  if (/too many requests|muitas requisições|muitas requisicoes/i.test(errorMessage) && attempt < 6) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(8_000, 1_000 * (attempt + 1))));
+    return omieCall(company, call, param, serviceUrl, attempt + 1);
+  }
+  if (errorMessage || body.faultcode) throw new Error(errorMessage || String(body.faultcode));
   return body;
 }
 function dateISO(value) {
@@ -186,7 +192,7 @@ async function syncCompany(company, knownOrders) {
       if (!/não existem registros|nao existem registros/i.test(error.message)) throw error;
     }
   }
-  const imported = (await mapWithLimit(summaries, 4, async (summary) => {
+  const imported = (await mapWithLimit(summaries, 2, async (summary) => {
     const omieId = summary.cabecalho?.codigo_pedido || summary.codigo_pedido;
     if (!omieId) return null;
     const id = `omie:${company.name}:${omieId}`;
@@ -223,6 +229,10 @@ async function syncAll() {
   } catch (error) {
     db.lastError = error.message; await saveDb(db); throw error;
   }
+}
+function requestSync() {
+  if (!activeSync) activeSync = syncAll().finally(() => { activeSync = null; });
+  return activeSync;
 }
 async function body(req) {
   let raw = ''; for await (const chunk of req) raw += chunk;
@@ -271,7 +281,7 @@ const server = createServer(async (req, res) => {
       productImageCache.set(cacheKey, imageUrl);
       return json(res, 200, { imageUrl });
     }
-    if (req.method === 'POST' && url.pathname === '/api/sync') return json(res, 200, await syncAll());
+    if (req.method === 'POST' && url.pathname === '/api/sync') return json(res, 200, await requestSync());
     if (req.method === 'POST' && /^\/api\/orders\/[^/]+\/status$/.test(url.pathname)) {
       const code = decodeURIComponent(url.pathname.split('/')[3]); const input = await body(req);
       const db = await readDb(); const order = db.orders.find((item) => item.code === code);
@@ -285,7 +295,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, async () => {
   console.log(`Integração Omie disponível na porta ${port}`);
-  try { await syncAll(); } catch (error) { console.warn(`Aguardando credenciais Omie: ${error.message}`); }
+  try { await requestSync(); } catch (error) { console.warn(`Aguardando credenciais Omie: ${error.message}`); }
 });
 const minutes = Math.max(1, Number(process.env.OMIE_SYNC_INTERVAL_MINUTES || 5));
-setInterval(() => syncAll().catch((error) => console.warn(`Falha na sincronização: ${error.message}`)), minutes * 60_000);
+setInterval(() => requestSync().catch((error) => console.warn(`Falha na sincronização: ${error.message}`)), minutes * 60_000);
