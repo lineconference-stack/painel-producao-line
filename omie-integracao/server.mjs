@@ -12,6 +12,7 @@ const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://lineconference-stac
 const dbPath = join(root, 'data', 'omie-orders.json');
 const omieUrl = 'https://app.omie.com.br/api/v1/produtos/pedido/';
 const omieProductUrl = 'https://app.omie.com.br/api/v1/geral/produtos/';
+const omieClientUrl = 'https://app.omie.com.br/api/v1/geral/clientes/';
 const productImageCache = new Map();
 const companies = [
   { name: 'Line Conference', key: process.env.OMIE_LINE_APP_KEY, secret: process.env.OMIE_LINE_APP_SECRET },
@@ -204,8 +205,23 @@ const server = createServer(async (req, res) => {
       const company = companies.find((item) => item.name === companyName);
       if (!company || !omieId) return json(res, 400, { error: 'Empresa ou pedido inválido' });
       const complete = await omieCall(company, 'ConsultarPedido', { codigo_pedido: omieId });
-      const order = normaliseOrder(company, complete.pedido_venda_produto || complete);
-      return json(res, 200, { client: order.client, shipping: order.shipping, invoice: order.invoice });
+      const rawOrder = complete.pedido_venda_produto || complete;
+      const order = normaliseOrder(company, rawOrder);
+      const clientId = rawOrder.cabecalho?.codigo_cliente;
+      let customer = {};
+      if (clientId) customer = await omieCall(company, 'ConsultarCliente', { codigo_cliente_omie: clientId }, omieClientUrl);
+      const shipping = {
+        ...order.shipping,
+        recipient: order.shipping.recipient || text(customer.razao_social || customer.nome_fantasia),
+        document: order.shipping.document || text(customer.cnpj_cpf),
+        address: order.shipping.address || text([customer.endereco, customer.endereco_numero, customer.complemento].filter(Boolean).join(', ')),
+        district: order.shipping.district || text(customer.bairro),
+        city: order.shipping.city || text(customer.cidade),
+        state: order.shipping.state || text(customer.estado),
+        zip: order.shipping.zip || text(customer.cep),
+        phone: order.shipping.phone || text(customer.telefone1_numero || customer.telefone2_numero)
+      };
+      return json(res, 200, { client: order.client || shipping.recipient, shipping, invoice: order.invoice });
     }
     if (req.method === 'GET' && url.pathname === '/api/product-image') {
       const companyName = text(url.searchParams.get('company'));
