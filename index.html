@@ -24,7 +24,7 @@
   </style>
 </head>
 <body>
-<header><div><h1>Painel de Produção</h1><p>Line Conference · controle diário da linha de montagem</p></div><div id="today"></div></header>
+<header><div><span class="hud-eyebrow">LINE COMMAND CENTER // PRODUÇÃO</span><h1>Painel de Produção</h1><p>Line Conference · controle diário da linha de montagem</p></div><div id="today"></div></header>
 <main class="wrap">
   <div class="cards"><div class="card"><div class="k">Meta total</div><div class="v" id="mMeta">0</div></div><div class="card"><div class="k">Produzido acumulado</div><div class="v" id="mProduced">0</div></div><div class="card"><div class="k">Liberado para ML</div><div class="v" id="mReleased">0</div></div><div class="card"><div class="k">Falta produzir</div><div class="v" id="mMissing">0</div></div></div>
   <section class="quick-actions"><h2>O que você quer fazer?</h2><p class="small">Para pedidos da Line, GLO e licitação, escolha o PDF. Use o pedido manual apenas para Mercado Livre.</p><div class="tools"><button onclick="document.getElementById('pdfImport').click()">Importar pedido PDF</button><button class="secondary" onclick="openOrder()">Pedido Mercado Livre</button><button class="secondary" onclick="openEntry()">Registrar turno</button><button class="secondary" onclick="openProduct()">+ Adicionar produto</button><button class="secondary" onclick="setWhatsApp()">Configurar WhatsApp</button><button type="button" onclick="askWhatsApp()">Perguntar ao escritório via WhatsApp</button><button class="secondary" onclick="exportCSV()">Exportar CSV</button><button class="danger" onclick="resetData()">Limpar dados</button></div></section>
@@ -199,6 +199,22 @@ importarPedidosOmie(true); setInterval(() => importarPedidosOmie(true), 60_000);
   @media(max-width:760px){.orders-section .kanban{height:62vh;min-height:390px}.orders-section .lane{min-width:240px}}
   @media(max-width:760px){.order-detail-grid{grid-template-columns:1fr}.order-product{grid-template-columns:110px 1fr}.order-product-image{height:110px}}
   @media(prefers-reduced-motion:reduce){.line-ai,.line-ai-dog{animation:none!important}.line-ai-roaming{transform:none!important}}
+</style>
+<style>
+  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background-image:linear-gradient(#42c8ff0a 1px,transparent 1px),linear-gradient(90deg,#42c8ff0a 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,#000 0,transparent 78%)}
+  header{min-height:132px;background:radial-gradient(circle at 75% 45%,#1a668052,transparent 24rem),linear-gradient(105deg,#050b13,#0a2131 58%,#111b2a);box-shadow:0 18px 55px #0008}
+  header:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,#5ee7ff25,transparent);transform:translateX(-100%);animation:hudScan 7s ease-in-out infinite}
+  header>div{position:relative;z-index:1}.hud-eyebrow{display:block;color:#55dcff;font-size:.7rem;font-weight:800;letter-spacing:.2em;margin-bottom:.55rem;text-shadow:0 0 14px #00bfff}
+  header h1{font-size:1.8rem;text-transform:uppercase;letter-spacing:.04em;text-shadow:0 0 24px #4bdcff55}#today:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#48f6aa;box-shadow:0 0 12px #48f6aa;margin-right:8px;animation:hudPulse 1.8s ease-in-out infinite}
+  section,.card{backdrop-filter:blur(12px)}section{position:relative;background:linear-gradient(145deg,#102234e8,#0a1624ee);border-color:#31627c;box-shadow:inset 0 1px #8bdfff15,0 18px 45px #0005}
+  section:before,section:after{content:"";position:absolute;width:22px;height:22px;pointer-events:none}section:before{left:8px;top:8px;border-left:2px solid #48d7ff;border-top:2px solid #48d7ff}section:after{right:8px;bottom:8px;border-right:2px solid #ff9a3d;border-bottom:2px solid #ff9a3d}
+  section h2{display:flex;align-items:center;gap:9px;text-transform:uppercase;letter-spacing:.08em;color:#dff8ff}section h2:before{content:"";width:20px;height:2px;background:#4bdcff;box-shadow:0 0 10px #4bdcff}
+  .cards>.card{position:relative;overflow:hidden;border-color:#31546b;background:linear-gradient(150deg,#142b3ecf,#0b1624f2)}.cards>.card:after{content:"";position:absolute;width:80px;height:80px;border:1px solid #49d8ff26;border-radius:50%;right:-30px;top:-30px;box-shadow:0 0 28px #32c7ff10,inset 0 0 22px #32c7ff12}.cards>.card .v{text-shadow:0 0 18px currentColor}
+  .tools{background:linear-gradient(90deg,#0a1928,#112a3b);border-color:#32728e}.tools button{border:1px solid #68dfff42;clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+  .kanban{box-shadow:inset 0 0 30px #03101dcc}.lane h3{background:linear-gradient(90deg,#173449,#102131);text-transform:uppercase;letter-spacing:.06em}.kanban-card{background:linear-gradient(145deg,#152b40,#0e1c2c)}
+  dialog{background:linear-gradient(145deg,#10283b,#091522);color:#e9f8ff;border:1px solid #50d9ff80}dialog::backdrop{background:#02070dcc;backdrop-filter:blur(6px)}
+  @keyframes hudScan{0%,68%{transform:translateX(-100%)}88%,100%{transform:translateX(100%)}}@keyframes hudPulse{50%{opacity:.35;transform:scale(.75)}}
+  @media(prefers-reduced-motion:reduce){header:before,#today:before{animation:none}}
 </style>
 </body>
 </html>
