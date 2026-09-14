@@ -14,6 +14,7 @@ const omieUrl = 'https://app.omie.com.br/api/v1/produtos/pedido/';
 const omieProductUrl = 'https://app.omie.com.br/api/v1/geral/produtos/';
 const omieClientUrl = 'https://app.omie.com.br/api/v1/geral/clientes/';
 const productImageCache = new Map();
+const customerCache = new Map();
 const companies = [
   { name: 'Line Conference', key: process.env.OMIE_LINE_APP_KEY, secret: process.env.OMIE_LINE_APP_SECRET },
   { name: 'GLO Equipamentos', key: process.env.OMIE_GLO_APP_KEY, secret: process.env.OMIE_GLO_APP_SECRET }
@@ -91,6 +92,40 @@ function shippingFromOrder(order) {
     tracking: text(freight.codigo_rastreio || '')
   };
 }
+async function customerFromOmie(company, clientId) {
+  if (!clientId) return {};
+  const cacheKey = `${company.name}:${clientId}`;
+  if (!customerCache.has(cacheKey)) {
+    customerCache.set(cacheKey, omieCall(company, 'ConsultarCliente', { codigo_cliente_omie: clientId }, omieClientUrl)
+      .catch(() => ({})));
+  }
+  return customerCache.get(cacheKey);
+}
+function customerShipping(customer) {
+  return {
+    recipient: text(customer.razao_social || customer.nome_fantasia),
+    document: text(customer.cnpj_cpf),
+    address: text([customer.endereco, customer.endereco_numero, customer.complemento].filter(Boolean).join(', ')),
+    district: text(customer.bairro),
+    city: text(customer.cidade),
+    state: text(customer.estado),
+    zip: text(customer.cep),
+    phone: text(customer.telefone1_numero || customer.telefone2_numero)
+  };
+}
+async function enrichOrderCustomer(company, rawOrder, order) {
+  const clientId = rawOrder.cabecalho?.codigo_cliente;
+  const customer = await customerFromOmie(company, clientId);
+  const fromCustomer = customerShipping(customer);
+  return {
+    ...order,
+    clientId: String(clientId || ''),
+    client: order.client || fromCustomer.recipient,
+    clientLookupCompleted: true,
+    shipping: Object.fromEntries(Object.entries({ ...fromCustomer, ...order.shipping })
+      .map(([key, value]) => [key, value || fromCustomer[key] || '']))
+  };
+}
 function normaliseOrder(company, order) {
   const header = order.cabecalho || {};
   const details = Array.isArray(order.det) ? order.det : [];
@@ -158,11 +193,12 @@ async function syncCompany(company, knownOrders) {
     const existing = knownOrders.get(id);
     // Nas próximas sincronizações só consultamos detalhes de pedido novo. A
     // etapa vem da listagem e continua atualizando o cartão automaticamente.
-    if (existing) return { ...existing, status: statusFromStage(summary.cabecalho?.etapa), updatedAt: existing.updatedAt };
+    if (existing?.clientLookupCompleted) return { ...existing, status: statusFromStage(summary.cabecalho?.etapa), updatedAt: existing.updatedAt };
     const complete = await omieCall(company, 'ConsultarPedido', { codigo_pedido: omieId });
     // A resposta de consulta vem dentro de pedido_venda_produto. Mantemos o
     // fallback para compatibilidade com versões antigas da API.
-    const order = normaliseOrder(company, complete.pedido_venda_produto || complete);
+    const rawOrder = complete.pedido_venda_produto || complete;
+    const order = await enrichOrderCustomer(company, rawOrder, normaliseOrder(company, rawOrder));
     return order.items.length ? order : null;
   })).filter(Boolean);
   return { company: company.name, imported, openOrders: summaries.length };
@@ -208,8 +244,7 @@ const server = createServer(async (req, res) => {
       const rawOrder = complete.pedido_venda_produto || complete;
       const order = normaliseOrder(company, rawOrder);
       const clientId = rawOrder.cabecalho?.codigo_cliente;
-      let customer = {};
-      if (clientId) customer = await omieCall(company, 'ConsultarCliente', { codigo_cliente_omie: clientId }, omieClientUrl);
+      const customer = await customerFromOmie(company, clientId);
       const shipping = {
         ...order.shipping,
         recipient: order.shipping.recipient || text(customer.razao_social || customer.nome_fantasia),
