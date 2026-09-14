@@ -11,6 +11,8 @@ const port = Number(process.env.PORT || 8787);
 const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://lineconference-stack.github.io';
 const dbPath = join(root, 'data', 'omie-orders.json');
 const omieUrl = 'https://app.omie.com.br/api/v1/produtos/pedido/';
+const omieProductUrl = 'https://app.omie.com.br/api/v1/geral/produtos/';
+const productImageCache = new Map();
 const companies = [
   { name: 'Line Conference', key: process.env.OMIE_LINE_APP_KEY, secret: process.env.OMIE_LINE_APP_SECRET },
   { name: 'GLO Equipamentos', key: process.env.OMIE_GLO_APP_KEY, secret: process.env.OMIE_GLO_APP_SECRET }
@@ -49,8 +51,8 @@ async function saveDb(db) {
   await writeFile(temp, JSON.stringify(db, null, 2));
   await rename(temp, dbPath);
 }
-async function omieCall(company, call, param) {
-  const response = await fetch(omieUrl, {
+async function omieCall(company, call, param, serviceUrl = omieUrl) {
+  const response = await fetch(serviceUrl, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ call, app_key: company.key, app_secret: company.secret, param: [param] })
   });
@@ -178,6 +180,19 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, configuredCompanies: companies.filter(c => c.key && c.secret).map(c => c.name) });
     if (req.method === 'GET' && url.pathname === '/api/orders') { const db = await readDb(); return json(res, 200, db); }
+    if (req.method === 'GET' && url.pathname === '/api/product-image') {
+      const companyName = text(url.searchParams.get('company'));
+      const code = text(url.searchParams.get('code'));
+      const company = companies.find((item) => item.name === companyName);
+      if (!company || !code) return json(res, 400, { error: 'Empresa ou produto inválido' });
+      const cacheKey = `${companyName}:${code.toUpperCase()}`;
+      if (productImageCache.has(cacheKey)) return json(res, 200, { imageUrl: productImageCache.get(cacheKey) });
+      const product = await omieCall(company, 'ConsultarProduto', { codigo: code }, omieProductUrl);
+      const images = Array.isArray(product.imagens) ? product.imagens : [];
+      const imageUrl = text(images.find((image) => image?.url_imagem)?.url_imagem || '');
+      productImageCache.set(cacheKey, imageUrl);
+      return json(res, 200, { imageUrl });
+    }
     if (req.method === 'POST' && url.pathname === '/api/sync') return json(res, 200, await syncAll());
     if (req.method === 'POST' && /^\/api\/orders\/[^/]+\/status$/.test(url.pathname)) {
       const code = decodeURIComponent(url.pathname.split('/')[3]); const input = await body(req);
