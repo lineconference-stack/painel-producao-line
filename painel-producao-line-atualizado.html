@@ -27,8 +27,8 @@
 <header><div><h1>Painel de Produção</h1><p>Line Conference · controle diário da linha de montagem</p></div><div id="today"></div></header>
 <main class="wrap">
   <div class="cards"><div class="card"><div class="k">Meta total</div><div class="v" id="mMeta">0</div></div><div class="card"><div class="k">Produzido acumulado</div><div class="v" id="mProduced">0</div></div><div class="card"><div class="k">Liberado para ML</div><div class="v" id="mReleased">0</div></div><div class="card"><div class="k">Falta produzir</div><div class="v" id="mMissing">0</div></div></div>
+  <section class="quick-actions"><h2>O que você quer fazer?</h2><p class="small">Para pedidos da Line, GLO e licitação, escolha o PDF. Use o pedido manual apenas para Mercado Livre.</p><div class="tools"><button onclick="document.getElementById('pdfImport').click()">Importar pedido PDF</button><button class="secondary" onclick="openOrder()">Pedido Mercado Livre</button><button class="secondary" onclick="openEntry()">Registrar turno</button><button class="secondary" onclick="openProduct()">+ Adicionar produto</button><button class="secondary" onclick="setWhatsApp()">Configurar WhatsApp</button><button type="button" onclick="askWhatsApp()">Perguntar ao escritório via WhatsApp</button><button class="secondary" onclick="exportCSV()">Exportar CSV</button><button class="danger" onclick="resetData()">Limpar dados</button></div></section>
   <section><h2>Equipe de montagem</h2><p class="small">Cada perfil mostra a responsável e o avanço da meta diária da montadora.</p><div class="team-profiles" id="teamProfiles"></div></section>
-  <div class="tools"><button onclick="openProduct()">+ Adicionar produto</button><button class="secondary" onclick="openEntry()">Registrar turno</button><button class="secondary" onclick="openOrder()">Pedido Mercado Livre</button><button class="secondary" onclick="document.getElementById('pdfImport').click()">Importar pedido PDF</button><button class="secondary" onclick="setWhatsApp()">Configurar WhatsApp</button><button type="button" onclick="askWhatsApp()">Perguntar ao escritório via WhatsApp</button><button class="secondary" onclick="exportCSV()">Exportar CSV</button><button class="danger" onclick="resetData()">Limpar dados</button></div>
   <input id="pdfImport" type="file" accept="application/pdf,.pdf" hidden>
   <section><h2>Necessidade e acompanhamento</h2><p class="small">O sistema calcula o ritmo diário a partir da data de liberação. Atualize a produção no começo e no fim de cada turno.</p><div class="table-wrap"><table><thead><tr><th>Foto</th><th>Código</th><th>Produto</th><th>Meta diária</th><th>Produzido hoje</th><th>Acumulado</th><th>Liberado ML</th><th>Saldo</th><th>Falta</th><th>Responsável</th><th>Montadora</th><th>Liberação</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></section>
   <section><h2>Últimos lançamentos</h2><div class="table-wrap"><table><thead><tr><th>Data</th><th>Turno</th><th>Produto</th><th>Montadora</th><th>Responsável</th><th>Produzido</th><th>Liberado ML</th><th>Observação</th></tr></thead><tbody id="logs"></tbody></table></div></section>
@@ -105,5 +105,43 @@ async function importOrderPdf(file){
     save(); alert(`Pedido ${orderCode} importado: ${items.length} item(ns) foram enviados para “A separar”.`);
   }catch(error){alert(error.message||'Não foi possível importar este PDF.');}
 }
-</script></body></html>
-<script>const t=document.querySelector(".tools"),c=document.querySelector(".cards");c.after(t);t.insertAdjacentHTML("beforebegin","<section><h2>O que você quer fazer?</h2><p class=small>Para pedidos da Line, GLO e licitação, escolha o PDF.</p></section>")</script>
+</script></body>
+<script>
+/* Integração Omie. As chaves ficam somente no servidor; o painel usa apenas esta URL. */
+window.OMIE_API_URL = window.OMIE_API_URL || 'http://localhost:8787/api';
+function omieText(value){ return String(value || '').replace(/\s+/g,' ').trim(); }
+function omieCode(value){ return omieText(value).toUpperCase(); }
+function omieProductId(code){ return `omie-product:${omieCode(code)}`; }
+async function importarPedidosOmie(silent=false){
+  try{
+    const response = await fetch(`${window.OMIE_API_URL}/orders`);
+    if(!response.ok) throw new Error('A integração Omie não está disponível.');
+    const result = await response.json(); let added = 0, updated = 0;
+    for(const remote of (result.orders || [])){
+      const items = [];
+      for(const item of remote.items || []){
+        const code = omieCode(item.code), name = omieText(item.description);
+        let product = data.products.find(p => omieCode(p.code) === code);
+        if(product && omieText(product.name).toUpperCase() !== name.toUpperCase()) throw new Error(`O código ${code} já está cadastrado com outra descrição. Corrija o cadastro antes de importar este pedido.`);
+        if(!product){ product = {id:omieProductId(code), code, name, target:Number(item.quantity), release:remote.date || today(), owner:'', station:'Montadora 1', image:''}; data.products.push(product); }
+        items.push({product:product.id, quantity:Number(item.quantity)});
+      }
+      if(!items.length) continue;
+      const current = data.orders.find(order => order.id === remote.id || (order.source === 'omie' && omieCode(order.code) === omieCode(remote.code)));
+      const imported = {id:remote.id, source:'omie', company:remote.company, code:remote.code, items, invoice:remote.invoice || '', date:remote.date || today(), owner:'', status:remote.status || 'A separar', client:remote.client || ''};
+      if(current){ Object.assign(current, imported, {status:current.status || imported.status}); updated++; } else { data.orders.push(imported); added++; }
+    }
+    save(); if(!silent) alert(`Omie sincronizado: ${added} pedido(s) novo(s) e ${updated} atualizado(s).`);
+  }catch(error){ if(!silent) alert(error.message || 'Não foi possível consultar o Omie.'); }
+}
+async function sincronizarOmieAgora(){
+  try{ const response = await fetch(`${window.OMIE_API_URL}/sync`, {method:'POST'}); if(!response.ok) throw new Error('Não foi possível atualizar os pedidos no Omie.'); await importarPedidosOmie(); }
+  catch(error){ alert(error.message || 'A integração Omie não está disponível.'); }
+}
+const oldChangeOrderStatus = window.changeOrderStatus;
+window.changeOrderStatus = function(id,status){ oldChangeOrderStatus(id,status); const order = data.orders.find(item => item.id === id); if(order?.source === 'omie') fetch(`${window.OMIE_API_URL}/orders/${encodeURIComponent(order.code)}/status`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({status})}).catch(()=>{}); };
+const actions = document.querySelector('.tools');
+if(actions){ const button = document.createElement('button'); button.type='button'; button.className='secondary'; button.textContent='Sincronizar Omie'; button.onclick=sincronizarOmieAgora; actions.prepend(button); }
+importarPedidosOmie(true); setInterval(() => importarPedidosOmie(true), 60_000);
+</script>
+</html>

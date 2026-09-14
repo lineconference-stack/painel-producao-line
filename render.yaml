@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: painel-producao-omie
+    runtime: node
+    rootDir: omie-integracao
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: ALLOWED_ORIGIN
+        value: https://lineconference-stack.github.io
+      - key: OMIE_SYNC_INTERVAL_MINUTES
+        value: "5"
+      - key: OMIE_LINE_APP_KEY
+        sync: false
+      - key: OMIE_LINE_APP_SECRET
+        sync: false
+      - key: OMIE_GLO_APP_KEY
+        sync: false
+      - key: OMIE_GLO_APP_SECRET
+        sync: false
