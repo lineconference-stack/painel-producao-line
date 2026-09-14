@@ -116,13 +116,16 @@ async function importarPedidosOmie(silent=false){
   try{
     const response = await fetch(`${window.OMIE_API_URL}/orders`);
     if(!response.ok) throw new Error('A integração Omie não está disponível.');
-    const result = await response.json(); let added = 0, updated = 0;
+    const result = await response.json(); let added = 0, updated = 0, descriptionConflicts = 0;
     for(const remote of (result.orders || [])){
       const items = [];
       for(const item of remote.items || []){
         const code = omieCode(item.code), name = omieText(item.description);
         let product = data.products.find(p => omieCode(p.code) === code);
-        if(product && omieText(product.name).toUpperCase() !== name.toUpperCase()) throw new Error(`O código ${code} já está cadastrado com outra descrição. Corrija o cadastro antes de importar este pedido.`);
+        /* Alguns pedidos antigos do Omie trazem descrições diferentes para o mesmo
+           código. Mantemos uma única descrição canônica no cadastro e continuamos
+           a carga, para que um item histórico não bloqueie todos os pedidos da GLO. */
+        if(product && omieText(product.name).toUpperCase() !== name.toUpperCase()) descriptionConflicts++;
         if(!product){ product = {id:omieProductId(code), code, name, target:Number(item.quantity), release:remote.date || today(), owner:'', station:'Montadora 1', image:''}; data.products.push(product); }
         items.push({product:product.id, quantity:Number(item.quantity)});
       }
@@ -131,7 +134,7 @@ async function importarPedidosOmie(silent=false){
       const imported = {id:remote.id, source:'omie', company:remote.company, code:remote.code, items, invoice:remote.invoice || '', date:remote.date || today(), owner:'', status:remote.status || 'A separar', client:remote.client || ''};
       if(current){ Object.assign(current, imported, {status:current.status || imported.status}); updated++; } else { data.orders.push(imported); added++; }
     }
-    save(); if(!silent) alert(`Omie sincronizado: ${added} pedido(s) novo(s) e ${updated} atualizado(s).`);
+    save(); if(!silent) alert(`Omie sincronizado: ${added} pedido(s) novo(s) e ${updated} atualizado(s).${descriptionConflicts ? ` ${descriptionConflicts} descrição(ões) antiga(s) foram padronizadas pelo código do produto.` : ''}`);
   }catch(error){ if(!silent) alert(error.message || 'Não foi possível consultar o Omie.'); }
 }
 async function sincronizarOmieAgora(){
